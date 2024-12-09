@@ -1,0 +1,578 @@
+---
+title: "Resultados USAER: Tablero"
+format: 
+  dashboard:
+    nav-buttons: [github]
+    github: https://github.com/Prosasmed/usaer_dashboard.git
+logo: images/logo2.png
+theme: [sandstone, theme/custom.scss]
+fig-width: 10
+fig-asp: 0.3
+params:
+  month: "Diciembre"
+  year: "2024"
+  us_cesarean_rate: 0.321 
+  us_preterm_rate:  0.1049
+  threshold_diff: 0.02
+editor_options: 
+  chunk_output_type: console
+output-file: index.html
+---
+
+```{r}
+#| label: load-packages
+#| message: false
+
+library(tidyverse)
+library(readxl)
+library(scales)
+library(DT)
+library(gt)
+theme_set(theme_minimal(base_size = 24, base_family = "Atkinson Hyperlegible"))
+```
+
+```{r}
+#| label: load-data
+#| message: false
+
+ld <- read_excel("data/ld.xlsx")
+ld2 <- read_excel("data/Id_2.xlsx")
+ld3 <- read_excel("data/ld_3.xlsx")
+ld4 <- read_excel("data/ld_4.xlsx")
+ld5 <- read_excel("data/ld_5.xlsx")
+ld6 <- read_excel("data/ld_6.xlsx")
+ld7 <- read_excel("data/ld_7.xlsx")
+ld8 <- read_excel("data/ld_8.xlsx")
+```
+
+```{r}
+#| label: set-inputs
+
+time_period <- paste(params$month, params$year)
+```
+
+```{r}
+#| label: prep-data
+
+ld <- ld |>
+  mutate(
+    delivery_method = str_to_sentence(delivery_method),
+    term = str_to_sentence(term),
+    parity = case_when(
+      parity == "1"  ~ "Nulliparous",
+      parity == "2"  ~ "Primiparous",
+      parity == "3+" ~ "Multiparous"
+    ),
+    parity = fct_relevel(parity, "Nulliparous", "Primiparous", "Multiparous"),
+    maternal_age = fct_relevel(maternal_age, "<20", "20-34", "35+")
+  )
+```
+
+#  {.sidebar}
+
+USAER potencia su incidencia atendiendo:
+
+|                                  |                     |
+|----------------------------------|---------------------|
+| **Escuelas de Educación básica** | 14.1\%              |
+| **Escuelas con alumnos en BAP**  | 37\%                |
+
+------------------------------------------------------------------------
+
+Para el ciclo escolar 2019-2020, la USAER ya se encontraba en 4,646 planteles:
+
+|                                    |          |
+|------------------------------------|----------|
+| **Alumnos atendidos en 2018-2019** |  519,494 |
+| **Centros escolares 2018-2019**    |  4,527   |
+| **Alumnos Atendidos 2019-2020**    |  540,930 |
+| **Incremento de atención**         | 4\%      |
+
+------------------------------------------------------------------------
+
+::: {.callout-note collapse="true"}
+## Aviso
+
+Este es un reporte en forma de resumen de USAER. La información presentada proviene [del informe USAER disponible en línea](https://www.mejoredu.gob.mx/publicaciones/informe-de-resultados/la-usaer-en-voz-de-sus-docentes).
+:::
+
+# All
+
+```{r}
+#| label: all-values
+#| results: hide
+
+n_births <- nrow(ld)
+
+p_cesarean <- ld |>
+  count(delivery_method) |>
+  mutate(p = n / sum(n)) |>
+  filter(delivery_method == "Cesarean") |>
+  pull(p)
+
+p_cesarean_color <- case_when(
+  between(p_cesarean, params$us_cesarean_rate, params$us_cesarean_rate + params$threshold_diff) ~ "warning",
+  p_cesarean > params$us_cesarean_rate + params$threshold_diff ~ "danger",
+  .default = "light"
+  )
+
+p_preterm <- ld |>
+  count(term) |>
+  mutate(p = n / sum(n)) |>
+  filter(term == "Pre-term") |>
+  pull(p)
+
+p_preterm_color <- case_when(
+  between(p_preterm, params$us_preterm_rate, params$us_preterm_rate + params$threshold_diff) ~ "warning",
+  p_preterm > params$us_preterm_rate + params$threshold_diff ~ "danger",
+  .default = "light"
+  )
+```
+
+## Row {height="22.5%"}
+
+```{r}
+#| content: valuebox
+#| title: "Escuelas atendidas"
+
+list(
+  icon = "file-medical",
+  color = "primary",
+  value = n_births
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Estudiantes atendidos"
+
+list(
+  icon = "clipboard2-pulse",
+  color = p_cesarean_color,
+  value = label_percent(accuracy = 0.1)(p_cesarean)
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Crecimiento de atención"
+
+list(
+  icon = "calendar-week",
+  color = p_preterm_color,
+  value = label_percent(accuracy = 0.1)(p_preterm)
+)
+```
+
+## Row {height="45%"}
+
+### Column {width="40%"}
+
+```{r}
+#| title: Centros escolares USAER
+
+ld2 |>  
+  # Filtrar solo los datos donde 'unidad' es 'Centros escolares'
+  filter(unidad == "Centros escolares") |>  
+  # Resumir los datos para calcular el valor promedio de 'value' por 'educacion' y 'ciclo'
+  group_by(educacion, Ciclo) |>  
+  summarise(value_mean = mean(value, na.rm = TRUE), .groups = "drop") |>  
+  # Reorganizar las filas antes de pasar a gt() para asegurar que las categorías de educación estén en orden
+  arrange(factor(educacion, levels = c("Inicial", "Preescolar", "Primaria", "Secundaria"))) |>  
+  # Reorganizar los datos para tener ciclos '1' y '2' en columnas separadas
+  pivot_wider(names_from = Ciclo, values_from = value_mean, names_prefix = "") |>  
+  # Crear la tabla con gt
+  gt() |>  
+  # Formatear las columnas de ciclo como números con decimales
+  fmt_number(
+    columns = c("1", "2"),
+    decimals = 0
+  ) |>  
+  # Cambiar los nombres de las columnas a 2018-2019 y 2019-2020
+  cols_label(
+    `1` = "2018-2019",
+    `2` = "2019-2020"
+  ) |>  
+  # Eliminar el nombre de la primera columna
+  cols_label(educacion = "")
+```
+
+### Column {width="60%"}
+
+```{r}
+#| title: Evolución USAER entre escuelas
+
+### Column {width="60%"}
+
+```{r}
+#| title: Evolución USAER entre escuelas
+
+ld2 %>%
+  filter(unidad == "Centros escolares") %>%
+  ggplot(aes(x = educacion, y = value, 
+             color = as.factor(Ciclo))) +
+  geom_segment(aes(x = as.numeric(as.factor(educacion)) + 
+                     0.2 * (as.numeric(as.factor(Ciclo)) - 1.5),
+                   xend = as.numeric(as.factor(educacion)) +
+                     0.2 * (as.numeric(as.factor(Ciclo)) - 1.5),
+                   y = 0, yend = value), 
+               linewidth = 1) +
+  geom_point(aes(x = as.numeric(as.factor(educacion)) + 
+                   0.2 * (as.numeric(as.factor(Ciclo)) - 1.5)), 
+             size = 4) +
+  ggtitle(NULL) +
+  labs(x = "Nivel educativo",
+       y = "Planteles",
+       color = NULL) +
+  scale_color_manual(values = c("1" = "#621132", "2" = "#13322B"),
+                     labels = c("2018-2019", "2019-2020")) +
+  scale_x_continuous(breaks = seq_along(unique(ld2$educacion)),
+                     labels = unique(ld2$educacion)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+## Row {height="45%"}
+
+```{r}
+#| title: Atención estudiantil USAER
+
+ld2 |>  
+  # Filtrar solo los datos donde 'unidad' es 'Estudiantes'
+  filter(unidad == "Estudiantes") |>  
+  # Resumir los datos para calcular el valor promedio de 'value' por 'educacion' y 'ciclo'
+  group_by(educacion, Ciclo) |>  
+  summarise(value_mean = mean(value, na.rm = TRUE), .groups = "drop") |>  
+  # Reorganizar las filas antes de pasar a gt() para asegurar que las categorías de educación estén en orden
+  arrange(factor(educacion, levels = c("Inicial", "Preescolar", "Primaria", "Secundaria"))) |>  
+  # Reorganizar los datos para tener ciclos '1' y '2' en columnas separadas
+  pivot_wider(names_from = Ciclo, values_from = value_mean, names_prefix = "") |>  
+  # Crear la tabla con gt
+  gt() |>  
+  # Formatear las columnas de ciclo como números con decimales
+  fmt_number(
+    columns = c("1", "2"),
+    decimals = 0
+  ) |>  
+  # Cambiar los nombres de las columnas a 2018-2019 y 2019-2020
+  cols_label(
+    `1` = "2018-2019",
+    `2` = "2019-2020"
+  ) |>  
+  # Eliminar el nombre de la primera columna
+  cols_label(educacion = "")
+```
+
+### Column {width="60%"}
+
+```{r}
+#| title: Evolución estudiantil USAER
+
+ld2 %>%
+  filter(unidad == "Estudiantes") %>%
+  ggplot(aes(x = educacion, y = value / 1000,
+             color = as.factor(Ciclo))) +
+  geom_segment(aes(x = as.numeric(as.factor(educacion)) + 
+                     0.2 * (as.numeric(as.factor(Ciclo)) - 1.5),
+                   xend = as.numeric(as.factor(educacion)) +
+                     0.2 * (as.numeric(as.factor(Ciclo)) - 1.5),
+                   y = 0, yend = value / 1000),
+               linewidth = 1) +
+  geom_point(aes(x = as.numeric(as.factor(educacion)) + 
+                   0.2 * (as.numeric(as.factor(Ciclo)) - 1.5)), 
+             size = 4) +
+  ggtitle(NULL) +
+  labs(x = "Nivel educativo",
+       y = "Estudiantes (Miles)",
+       color = NULL) +
+  scale_color_manual(values = c("1" = "#621132", "2" = "#13322B"),
+                     labels = c("2018-2019", "2019-2020")) +
+  scale_x_continuous(breaks = seq_along(unique(ld2$educacion)),
+                     labels = unique(ld2$educacion)) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+# Nacional {orientation="columns"}
+
+## Column {width="60%"}
+
+```{r}
+#| label: Escuelas USAER y Estudiantes con NEE
+#| results: hide
+
+ld_v <- ld |>
+  filter(delivery_method == "Vaginal")
+
+n_births_v <- nrow(ld_v)
+
+p_preterm_v <- ld_v |>
+  count(term) |>
+  mutate(p = n / sum(n)) |>
+  filter(term == "Pre-term") |>
+  pull(p)
+
+p_preterm_color_v <- case_when(
+  between(p_preterm_v, params$us_preterm_rate, params$us_preterm_rate + params$threshold_diff) ~ "warning",
+  p_preterm_v > params$us_preterm_rate + params$threshold_diff ~ "danger",
+  .default = "light"
+  )
+```
+
+### Row {height="80%" .tabset}
+
+```{r}
+#| label: example-plot
+#| title: "Escuelas USAER"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld3 %>%
+  ggplot(aes(x = estado)) +
+  geom_segment(aes(xend = estado,
+                   y = v3,
+                   yend = v5), 
+               color = "black") +
+  geom_point(aes(y = v3, 
+                 color = "V3"), 
+             size = 3) +
+  geom_point(aes(y = v5, 
+                 color = "V5"), 
+             size = 3) +
+  ggtitle("Escuelas primarias generales públicas con USAER y al menos un estudiante con NEE (%)",
+          subtitle = "Diferencia entre proporciones") +
+  scale_color_manual(
+    values = c("V3" = "#621132", 
+               "V5" = "#13322B"),
+    labels = c("V3" = "Primarias públicas con USAER (%)", 
+               "V5" = "Primarias públicas con USAER y estudiantes NEE (%)")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1),
+        legend.position = "bottom") +
+  labs(x = "Estados de la República",
+       y = "Porcentaje",
+       colour = NULL)
+
+```
+
+```{r}
+#| label: example-plot2
+#| title: "USAER por Primarias"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld4 %>%
+  ggplot(aes(x = estado)) +
+  geom_segment(aes(xend = estado,
+                   y = v1,
+                   yend = v2), 
+               color = "black") +
+  geom_point(aes(y = v1, 
+                 color = "V1"), 
+             size = 3) +
+  geom_point(aes(y = v2, 
+                 color = "V2"), 
+             size = 3) +
+  ggtitle("Relación entre escuelas primarias y planteles USAER",
+          subtitle = "Diferencia absoluta por estado de la República") +
+  scale_color_manual(
+    values = c("V1" = "#621132", 
+               "V2" = "#13322B"),
+    labels = c("V1" = "Total de Primarias", 
+               "V2" = "Escuelas primarias generales públicas con USAER")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1),
+        legend.position = "bottom") +
+  labs(x = "Estados de la República",
+       y = "# Absoluto",
+       colour = NULL)
+```
+
+```{r}
+#| label: example-plot3
+#| title: "USAER y alumnos NEE"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld5 %>%
+  ggplot(aes(x = estado)) +
+  geom_segment(aes(xend = estado,
+                   y = v1,
+                   yend = v4), 
+               color = "black") +
+  geom_point(aes(y = v1, 
+                 color = "V1"), 
+             size = 3) +
+  geom_point(aes(y = v4, 
+                 color = "V4"), 
+             size = 3) +
+  ggtitle("Relación entre escuelas primarias y planteles con alumnos con NEE",
+          subtitle = "Diferencia absoluta por estado de la República") +
+  scale_color_manual(
+    values = c("V1" = "#621132", 
+               "V4" = "#13322B"),
+    labels = c("V1" = "Total de Primarias", 
+               "V4" = "Escuelas que atienden al menos un estudiante con NEE")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1),
+        legend.position = "bottom") +
+  labs(x = "Estados de la República",
+       y = "# Absoluto",
+       colour = NULL)
+```
+
+
+# Alumnos {orientation="columns"}
+
+## Column {width="60%"}
+
+```{r}
+#| label: cesarean-values
+#| results: hide
+
+ld_c <- ld |>
+  filter(delivery_method == "Cesarean")
+
+n_births_c <- nrow(ld_c)
+
+p_preterm_c <- ld_c |>
+  count(term) |>
+  mutate(p = n / sum(n)) |>
+  filter(term == "Pre-term") |>
+  pull(p)
+
+p_preterm_color_c <- case_when(
+  between(p_preterm_c, params$us_preterm_rate, params$us_preterm_rate + params$threshold_diff) ~ "warning",
+  p_preterm_c > params$us_preterm_rate + params$threshold_diff ~ "danger",
+  .default = "light"
+  )
+```
+
+### Row {height="20%"}
+
+```{r}
+#| component: valuebox
+#| title: "Alumnos atendidos en 2019-2020"
+
+list(
+  icon = "file-medical",
+  color = "primary",
+  value = 540930
+)
+```
+
+```{r}
+#| component: valuebox
+#| title: "% Atención en primaria"
+
+list(
+  icon = "calendar-week",
+  color = p_preterm_color_c,
+  value = label_percent(accuracy = 0.1)(.6968)
+)
+```
+
+### Row {height="40%" .tabset}
+
+```{r}
+#| label: example-plot4
+#| title: "Estudiantes atendidos por nivel"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld6 %>%
+  ggplot(aes(x = "", y = v4, fill = nivel)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(
+    values = c("#D4C19C", "#13322B", "#B38E5D", "#621132"),
+    labels = c("Inicial", "Secundaria", "Primaria", "Preescolar")
+  ) +
+  ggtitle("Estudiantes atendidos por USAER:",
+          subtitle = "Ciclo escolar 2019-2020, por nivel educativo") +
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_legend(title = NULL)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+```{r}
+#| label: example-plot5
+#| title: "Discapacidades atendidas"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld7 %>%
+  ggplot(aes(x = discapacidad, y = value, fill = nivel)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#D4C19C", "#13322B", "#B38E5D", "#621132")) +
+  scale_y_continuous(labels = scales::label_number(big.mark = ",", decimal.mark = ".")) +
+  ggtitle("Estudiantes atendidos según su condición",
+          subtitle = "Ciclo escolar 2019-2020, por nivel educativo") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: example-plot6
+#| title: "Ultimo plot"
+#| fig-width: 10
+#| fig-height: 15
+#| fig-asp: 0.7
+
+ld8 %>%
+  ggplot(aes(x = "", y = proporcion, fill = discapacidad)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(
+    values = c("#D4C19C", "#13322B", "#B38E5D", "#621132", "#4F4F4F")) +
+  ggtitle("Estudiantes atendidos por USAER según su condición o discapacidad",
+          subtitle = "Ciclo escolar 2019-2020") +
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_legend(title = NULL)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+# USAER
+
+## Row {.flow}
+
+::: card
+::: card-header
+Sobre USAER
+:::
+::: card-body
+[USAER](https://www.gob.mx/mejoredu/prensa/mejoredu-publica-un-estudio-diagnostico-sobre-los-servicios-de-apoyo-a-la-educacion-regular-usaer-315470?idiom=es) es una instancia técnico-operativa de educación especial encargada de proporcionar apoyos técnicos, metodológicos y conceptuales a planteles de educación básica, orientados al desarrollo de escuelas y aulas inclusivas, a partir de la disminución o eliminación de barreras para el aprendizaje y participación (BAP).
+
+Todas las intervenciones de USAER, se basan en tres tipos de interacciones ideales:
+
+> 1. _Colaborativas_ que implican un proceso de trabajo conducido por el equipo interdiscilinario de la USAER, el cual incorpora las distintas perspectivas de los especialistas bajo la coordinación de la dirección de la unidad.
+>
+> 2. _Corresponsables_, entendidas como el compromiso compartido entre la USAER y los planteles, para eliminar las BAP.
+> 3. _Participativas_, es decir, los procesos de atención que integra a las familias de las y los estudiantes.
+:::
+:::
+
+::: card
+::: card-header
+Sobre este tablero
+:::
+::: card-body
+Toda la información contenida en este tablero fue retomada del estudio [La USAER en voz de sus docentes. Evaluación diagnóstica del proceso de atención en escuelas primarias](https://www.mejoredu.gob.mx/publicaciones/informe-de-resultados/la-usaer-en-voz-de-sus-docentes), publicado en 2022 por [Mejoredu](https://www.mejoredu.gob.mx).
+:::
+:::
